@@ -8,6 +8,7 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent
 import com.boycottpro.models.Causes;
 import com.boycottpro.models.CausesSubset;
 import com.boycottpro.utilities.CausesUtility;
+import com.boycottpro.utilities.JwtUtility;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
@@ -16,6 +17,7 @@ import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
 import software.amazon.awssdk.services.dynamodb.model.ScanResponse;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 public class GetTopCausesHandler implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
@@ -35,24 +37,25 @@ public class GetTopCausesHandler implements RequestHandler<APIGatewayProxyReques
     @Override
     public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent event, Context context) {
         try {
+            String sub = JwtUtility.getSubFromRestEvent(event);
+            if (sub == null) return response(401, "Unauthorized");
             Map<String, String> pathParams = event.getPathParameters();
             int limit =  Integer.parseInt(pathParams.get("limit"));
             if (limit < 1 ) {
-                return new APIGatewayProxyResponseEvent()
-                        .withStatusCode(400)
-                        .withBody("{\"error\":\"Missing limit in path\"}");
+                return response(400,"error : Missing limit in path");
             }
             List<CausesSubset> causes = getTopCauses(limit);
             String responseBody = objectMapper.writeValueAsString(causes);
-            return new APIGatewayProxyResponseEvent()
-                    .withStatusCode(200)
-                    .withHeaders(Map.of("Content-Type", "application/json"))
-                    .withBody(responseBody);
+            return response(200,responseBody);
         } catch (Exception e) {
-            return new APIGatewayProxyResponseEvent()
-                    .withStatusCode(500)
-                    .withBody("{\"error\": \"Unexpected server error: " + e.getMessage() + "\"}");
+            return response(500,"error : Unexpected server error: " + e.getMessage());
         }
+    }
+    private APIGatewayProxyResponseEvent response(int status, String body) {
+        return new APIGatewayProxyResponseEvent()
+                .withStatusCode(status)
+                .withHeaders(Map.of("Content-Type", "application/json"))
+                .withBody(body);
     }
     private List<CausesSubset> getTopCauses(int limit) {
         ScanRequest scan = ScanRequest.builder()
@@ -62,6 +65,8 @@ public class GetTopCausesHandler implements RequestHandler<APIGatewayProxyReques
 
         ScanResponse response = dynamoDb.scan(scan);
 
+        AtomicInteger rankCounter = new AtomicInteger(1);
+
         return response.items().stream()
                 .filter(item -> item.containsKey("follower_count"))
                 .sorted(Comparator.comparingInt(
@@ -69,7 +74,9 @@ public class GetTopCausesHandler implements RequestHandler<APIGatewayProxyReques
                 ))
                 .limit(limit)
                 .map(item -> {
-                    return CausesUtility.mapToSubset(item);
+                    CausesSubset subset = CausesUtility.mapToSubset(item);
+                    subset.setRank(rankCounter.getAndIncrement());
+                    return subset;
                 })
                 .collect(Collectors.toList());
     }
