@@ -36,26 +36,33 @@ public class GetTopCausesHandler implements RequestHandler<APIGatewayProxyReques
 
     @Override
     public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent event, Context context) {
+        String sub = null;
         try {
-            String sub = JwtUtility.getSubFromRestEvent(event);
-            if (sub == null) return response(401, "Unauthorized");
+            sub = JwtUtility.getSubFromRestEvent(event);
+            if (sub == null) return response(401, Map.of("message", "Unauthorized"));
             Map<String, String> pathParams = event.getPathParameters();
             int limit =  Integer.parseInt(pathParams.get("limit"));
             if (limit < 1 ) {
-                return response(400,"error : Missing limit in path");
+                return response(400,Map.of("error"," Missing limit in path"));
             }
             List<CausesSubset> causes = getTopCauses(limit);
-            String responseBody = objectMapper.writeValueAsString(causes);
-            return response(200,responseBody);
+            return response(200,causes);
         } catch (Exception e) {
-            return response(500,"error : Unexpected server error: " + e.getMessage());
+            System.out.println(e.getMessage() + " for user " + sub);
+            return response(500,Map.of("error", "Unexpected server error: " + e.getMessage()) );
         }
     }
-    private APIGatewayProxyResponseEvent response(int status, String body) {
+    private APIGatewayProxyResponseEvent response(int status, Object body) {
+        String responseBody = null;
+        try {
+            responseBody = objectMapper.writeValueAsString(body);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
         return new APIGatewayProxyResponseEvent()
                 .withStatusCode(status)
                 .withHeaders(Map.of("Content-Type", "application/json"))
-                .withBody(body);
+                .withBody(responseBody);
     }
     private List<CausesSubset> getTopCauses(int limit) {
         ScanRequest scan = ScanRequest.builder()
