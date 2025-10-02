@@ -9,6 +9,7 @@ import com.boycottpro.models.Causes;
 import com.boycottpro.models.CausesSubset;
 import com.boycottpro.utilities.CausesUtility;
 import com.boycottpro.utilities.JwtUtility;
+import com.boycottpro.utilities.Logger;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
@@ -37,9 +38,14 @@ public class GetTopCausesHandler implements RequestHandler<APIGatewayProxyReques
     @Override
     public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent event, Context context) {
         String sub = null;
+        int lineNum = 41;
         try {
             sub = JwtUtility.getSubFromRestEvent(event);
-            if (sub == null) return response(401, Map.of("message", "Unauthorized"));
+            if (sub == null) {
+            Logger.error(44, sub, "user is Unauthorized");
+            return response(401, Map.of("message", "Unauthorized"));
+        }
+        lineNum = 47;
             Map<String, String> pathParams = event.getPathParameters();
             int limit =  Integer.parseInt(pathParams.get("limit"));
             if (limit < 1 ) {
@@ -48,7 +54,7 @@ public class GetTopCausesHandler implements RequestHandler<APIGatewayProxyReques
             List<CausesSubset> causes = getTopCauses(limit);
             return response(200,causes);
         } catch (Exception e) {
-            System.out.println(e.getMessage() + " for user " + sub);
+            Logger.error(lineNum, sub, e.getMessage());
             return response(500,Map.of("error", "Unexpected server error: " + e.getMessage()) );
         }
     }
